@@ -347,6 +347,50 @@ a {
   letter-spacing: 0.8px;
 }
 
+#betList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+  color: var(--muted);
+  font-family: "Space Grotesk", "Trebuchet MS", sans-serif;
+  font-size: 0.9rem;
+}
+
+#betList li {
+  padding: 8px 12px;
+  background: rgba(8, 25, 22, 0.6);
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.bet-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.bet-card {
+  padding: 14px 16px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 214, 140, 0.12);
+  border-radius: 16px;
+}
+
+.bet-card .label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.bet-card strong {
+  font-size: 1.4rem;
+}
+
 #historyList {
   list-style: none;
   padding: 0;

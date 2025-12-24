@@ -1,12 +1,21 @@
+var fs = require('fs');
+var path = require('path');
+
 var SUITS = ['S', 'H', 'D', 'C'];
 var RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 var DECKS_IN_SHOE = 8;
+var DATA_DIR = path.join(__dirname, '..', 'data');
+var BETS_FILE = path.join(DATA_DIR, 'bets.txt');
 
 var state = {
   round: 0,
   shoe: [],
   history: [],
-  current: null
+  current: null,
+  bets: {
+    totals: { player: 0, banker: 0, tie: 0 },
+    entries: []
+  }
 };
 
 function cardValue(rank) {
@@ -184,10 +193,93 @@ function reset() {
   state.shoe = buildShoe();
   state.history = [];
   state.current = null;
+  state.bets = {
+    totals: { player: 0, banker: 0, tie: 0 },
+    entries: []
+  };
 }
 
 function clearCurrent() {
   state.current = null;
+}
+
+function addBet(entry) {
+  if (!entry || typeof entry !== 'object') return false;
+  var side = entry.side;
+  var amount = entry.amount;
+  if (side !== 'player' && side !== 'banker' && side !== 'tie') {
+    return false;
+  }
+  if (typeof amount !== 'number' || amount <= 0) {
+    return false;
+  }
+  state.bets.entries.unshift({
+    name: entry.name || '익명',
+    side: side,
+    amount: amount,
+    time: new Date().toISOString()
+  });
+  state.bets.totals[side] += amount;
+  if (state.bets.entries.length > 50) {
+    state.bets.entries.pop();
+  }
+  appendBetFile(state.bets.entries[0]);
+  return true;
+}
+
+function ensureDataDir() {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+}
+
+function appendBetFile(bet) {
+  ensureDataDir();
+  var line = JSON.stringify(bet) + '\n';
+  fs.appendFileSync(BETS_FILE, line, 'utf8');
+}
+
+function writeBetsFile(entries) {
+  ensureDataDir();
+  var content = entries.map(function(item) {
+    return JSON.stringify(item);
+  }).join('\n');
+  if (content.length) {
+    content += '\n';
+  }
+  fs.writeFileSync(BETS_FILE, content, 'utf8');
+}
+
+function loadBetsFromFile() {
+  if (!fs.existsSync(BETS_FILE)) {
+    return;
+  }
+  var content = fs.readFileSync(BETS_FILE, 'utf8');
+  var lines = content.split(/\r?\n/).filter(Boolean);
+  lines.forEach(function(line) {
+    try {
+      var parsed = JSON.parse(line);
+      if (!parsed || typeof parsed !== 'object') return;
+      if (parsed.side !== 'player' && parsed.side !== 'banker' && parsed.side !== 'tie') {
+        return;
+      }
+      if (typeof parsed.amount !== 'number' || parsed.amount <= 0) {
+        return;
+      }
+      state.bets.entries.unshift({
+        name: parsed.name || '익명',
+        side: parsed.side,
+        amount: parsed.amount,
+        time: parsed.time || new Date().toISOString()
+      });
+      state.bets.totals[parsed.side] += parsed.amount;
+    } catch (err) {
+      // ignore malformed line
+    }
+  });
+  if (state.bets.entries.length > 50) {
+    state.bets.entries = state.bets.entries.slice(0, 50);
+  }
 }
 
 function getState() {
@@ -201,16 +293,26 @@ function getState() {
       bankerTotal: state.current.bankerTotal,
       outcome: state.current.outcome
     } : null,
-    history: state.history.slice()
+    history: state.history.slice(),
+    bets: {
+      totals: {
+        player: state.bets.totals.player,
+        banker: state.bets.totals.banker,
+        tie: state.bets.totals.tie
+      },
+      entries: state.bets.entries.slice()
+    }
   };
 }
 
 state.shoe = buildShoe();
+loadBetsFromFile();
 
 module.exports = {
   dealRound: dealRound,
   updateCard: updateCard,
   clearCurrent: clearCurrent,
   reset: reset,
-  getState: getState
+  getState: getState,
+  addBet: addBet
 };

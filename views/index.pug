@@ -3,5 +3,7 @@ extends layout
 block content
   .landing
     h1 Express Casino
-    p Baccarat 테이블 화면으로 이동하세요.
-    a.btn.btn-primary(href='/baccarat') Baccarat Control Table
+    p Baccarat 화면을 선택하세요.
+    .controls
+      a.btn.btn-primary(href='/baccarat') Baccarat Table
+      a.btn.btn-accent(href='/baccarat/admin') Baccarat Admin
