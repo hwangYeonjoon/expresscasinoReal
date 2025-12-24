@@ -1,11 +1,13 @@
 var fs = require('fs');
 var path = require('path');
+var userStore = require('./user-store');
 
 var SUITS = ['S', 'H', 'D', 'C'];
 var RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 var DECKS_IN_SHOE = 8;
 var DATA_DIR = path.join(__dirname, '..', 'data');
 var BETS_FILE = path.join(DATA_DIR, 'bets.txt');
+var ROUND_BETS_FILE = path.join(DATA_DIR, 'round-bets.txt');
 
 var state = {
   round: 0,
@@ -15,6 +17,11 @@ var state = {
   bets: {
     totals: { player: 0, banker: 0, tie: 0 },
     entries: []
+  },
+  lastSettlement: null,
+  betting: {
+    open: false,
+    closesAt: null
   }
 };
 
@@ -103,6 +110,8 @@ function outcomeFor(playerTotal, bankerTotal) {
 function dealRound() {
   ensureShoe();
   state.round += 1;
+  state.betting.open = false;
+  state.betting.closesAt = null;
 
   var player = [drawCard(), drawCard()];
   var banker = [drawCard(), drawCard()];
@@ -197,6 +206,8 @@ function reset() {
     totals: { player: 0, banker: 0, tie: 0 },
     entries: []
   };
+  state.lastSettlement = null;
+  state.betting = { open: false, closesAt: null };
 }
 
 function clearCurrent() {
@@ -205,6 +216,9 @@ function clearCurrent() {
 
 function addBet(entry) {
   if (!entry || typeof entry !== 'object') return false;
+  if (!isBettingOpen()) return false;
+  var user = userStore.getByUid(entry.uid);
+  if (!user) return false;
   var side = entry.side;
   var amount = entry.amount;
   if (side !== 'player' && side !== 'banker' && side !== 'tie') {
@@ -213,8 +227,14 @@ function addBet(entry) {
   if (typeof amount !== 'number' || amount <= 0) {
     return false;
   }
+  if (user.points < amount) {
+    return false;
+  }
+
+  userStore.updatePoints(user.uid, -amount);
   state.bets.entries.unshift({
-    name: entry.name || '익명',
+    uid: entry.uid,
+    name: user.nickname,
     side: side,
     amount: amount,
     time: new Date().toISOString()
@@ -225,6 +245,102 @@ function addBet(entry) {
   }
   appendBetFile(state.bets.entries[0]);
   return true;
+}
+
+function settleBet(entry, outcome) {
+  var win = entry.side === outcome;
+  if (!win) {
+    return 0;
+  }
+  if (entry.side === 'banker') {
+    return entry.amount * 1.95;
+  }
+  if (entry.side === 'tie') {
+    return entry.amount * 9;
+  }
+  return entry.amount * 2;
+}
+
+function closeRound() {
+  if (!state.current) {
+    state.bets = { totals: { player: 0, banker: 0, tie: 0 }, entries: [] };
+    state.lastSettlement = null;
+    state.betting.open = false;
+    state.betting.closesAt = null;
+    return;
+  }
+
+  var outcome = state.current.outcome;
+  var settlementEntries = state.bets.entries.map(function(entry) {
+    var payout = settleBet(entry, outcome);
+    if (payout > 0) {
+      userStore.updatePoints(entry.uid, payout);
+    }
+    return {
+      uid: entry.uid,
+      name: entry.name || 'Anonymous',
+      side: entry.side,
+      amount: entry.amount,
+      payout: payout,
+      net: payout - entry.amount
+    };
+  });
+
+  var totalNet = settlementEntries.reduce(function(sum, entry) {
+    return sum + entry.net;
+  }, 0);
+
+  state.lastSettlement = {
+    round: state.round,
+    outcome: outcome,
+    entries: settlementEntries,
+    totalNet: totalNet,
+    time: new Date().toISOString()
+  };
+
+  appendRoundBetsLog({
+    round: state.round,
+    outcome: outcome,
+    totals: {
+      player: state.bets.totals.player,
+      banker: state.bets.totals.banker,
+      tie: state.bets.totals.tie
+    },
+    entries: state.bets.entries.map(function(entry) {
+      return {
+        name: entry.name || 'Anonymous',
+        side: entry.side,
+        amount: entry.amount,
+        time: entry.time
+      };
+    }),
+    time: new Date().toISOString()
+  });
+
+  state.bets = {
+    totals: { player: 0, banker: 0, tie: 0 },
+    entries: []
+  };
+  state.current = null;
+}
+
+function startBettingWindow(seconds) {
+  if (state.current) return false;
+  if (state.betting.open && isBettingOpen()) return false;
+  state.betting.open = true;
+  state.betting.closesAt = Date.now() + seconds * 1000;
+  return true;
+}
+
+function isBettingOpen() {
+  if (!state.betting.open || !state.betting.closesAt) return false;
+  return Date.now() < state.betting.closesAt;
+}
+
+function secondsLeft() {
+  if (!state.betting.open || !state.betting.closesAt) return 0;
+  var diff = Math.ceil((state.betting.closesAt - Date.now()) / 1000);
+  return diff > 0 ? diff : 0;
 }
 
 function ensureDataDir() {
@@ -250,39 +366,26 @@ function writeBetsFile(entries) {
   fs.writeFileSync(BETS_FILE, content, 'utf8');
 }
 
-function loadBetsFromFile() {
-  if (!fs.existsSync(BETS_FILE)) {
-    return;
-  }
-  var content = fs.readFileSync(BETS_FILE, 'utf8');
-  var lines = content.split(/\r?\n/).filter(Boolean);
-  lines.forEach(function(line) {
-    try {
-      var parsed = JSON.parse(line);
-      if (!parsed || typeof parsed !== 'object') return;
-      if (parsed.side !== 'player' && parsed.side !== 'banker' && parsed.side !== 'tie') {
-        return;
-      }
-      if (typeof parsed.amount !== 'number' || parsed.amount <= 0) {
-        return;
-      }
-      state.bets.entries.unshift({
-        name: parsed.name || '익명',
-        side: parsed.side,
-        amount: parsed.amount,
-        time: parsed.time || new Date().toISOString()
-      });
-      state.bets.totals[parsed.side] += parsed.amount;
-    } catch (err) {
-      // ignore malformed line
-    }
-  });
-  if (state.bets.entries.length > 50) {
-    state.bets.entries = state.bets.entries.slice(0, 50);
-  }
+function appendRoundBetsLog(payload) {
+  ensureDataDir();
+  fs.appendFileSync(ROUND_BETS_FILE, JSON.stringify(payload) + '\n', 'utf8');
 }
 
 function getState() {
+  var participants = [];
+  var seen = {};
+  state.bets.entries.forEach(function(entry) {
+    if (seen[entry.uid]) return;
+    seen[entry.uid] = true;
+    var user = userStore.getByUid(entry.uid);
+    if (!user) return;
+    participants.push({
+      uid: user.uid,
+      nickname: user.nickname,
+      points: user.points
+    });
+  });
+
   return {
     round: state.round,
     shoeRemaining: state.shoe.length,
@@ -301,18 +404,26 @@ function getState() {
         tie: state.bets.totals.tie
       },
       entries: state.bets.entries.slice()
+    },
+    participants: participants,
+    lastSettlement: state.lastSettlement,
+    betting: {
+      open: isBettingOpen(),
+      closesAt: state.betting.closesAt,
+      secondsLeft: secondsLeft()
     }
   };
 }
 
 state.shoe = buildShoe();
-loadBetsFromFile();
 
 module.exports = {
   dealRound: dealRound,
   updateCard: updateCard,
   clearCurrent: clearCurrent,
+  closeRound: closeRound,
   reset: reset,
   getState: getState,
-  addBet: addBet
+  addBet: addBet,
+  startBettingWindow: startBettingWindow
 };

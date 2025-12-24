@@ -1,0 +1,2 @@
+{"round":1,"outcome":"player","totals":{"player":0,"banker":0,"tie":0},"entries":[],"time":"2025-12-24T07:08:18.433Z"}
+{"round":1,"outcome":"player","totals":{"player":30,"banker":0,"tie":0},"entries":[{"name":"연준","side":"player","amount":30,"time":"2025-12-24T07:11:55.958Z"}],"time":"2025-12-24T07:13:06.747Z"}

@@ -1,0 +1,4 @@
+{"uid":"Umjjo8ft0pdq9ae","email":"duswnsghkd@gmail.com","password":"1234","nickname":"yj","referrer":"admin","points":110027}
+{"uid":"admin","email":"admin","password":"admin","nickname":"Admin","referrer":"","points":100000}
+{"uid":"Umjjp43r4xdqzf1","email":"test1@example.com","password":"test1234","nickname":"test1","referrer":"","points":10000}
+{"uid":"Umjjp43r4hnj77t","email":"test2@example.com","password":"test1234","nickname":"test2","referrer":"","points":10000}

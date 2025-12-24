@@ -5,4 +5,20 @@ html
     meta(name='viewport', content='width=device-width, initial-scale=1')
     link(rel='stylesheet', href='/stylesheets/style.css')
   body
+    #toastStack.toast-stack
+    nav.top-nav
+      .nav-brand
+        a(href='/') Express Casino
+      .nav-links
+        a(href='/') Home
+        a(href='/baccarat') Baccarat
+        if currentUser && (currentUser.uid === 'admin' || currentUser.uid === 'Umjjo8ft0pdq9ae')
+          a(href='/baccarat/admin') Admin
+        if currentUser
+          a(href='/account') My Account
+          a(href='/account/topup') Top Up
+          a(href='/auth/logout') Logout
+        else
+          a(href='/auth/login') Login
+          a(href='/auth/register') Register
     block content

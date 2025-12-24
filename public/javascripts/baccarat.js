@@ -2,6 +2,7 @@ var apiBase = '/api/baccarat';
 var slots = ['P1', 'P2', 'P3', 'B1', 'B2', 'B3'];
 var rankOptions = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
 var suitOptions = ['S', 'H', 'D', 'C'];
+var lastBettingOpen = null;
 
 function toOutcome(outcome) {
   if (outcome === 'player') return 'PLAYER';
@@ -22,13 +23,25 @@ function setCardImage(slot, code) {
   img.src = src;
 }
 
+function showToast(message) {
+  var stack = document.getElementById('toastStack');
+  if (!stack) return;
+  var toast = document.createElement('div');
+  toast.className = 'toast';
+  toast.textContent = message;
+  stack.appendChild(toast);
+  setTimeout(function() {
+    toast.remove();
+  }, 2500);
+}
+
 function renderHistory(items) {
   var list = document.getElementById('historyList');
   if (!list) return;
   list.innerHTML = '';
   if (!items || !items.length) {
     var empty = document.createElement('li');
-    empty.textContent = '아직 기록이 없습니다.';
+    empty.textContent = 'No history yet.';
     list.appendChild(empty);
     return;
   }
@@ -43,6 +56,8 @@ function renderState(state) {
   updateText('roundCount', state.round);
   updateText('roundOnTable', state.round);
   updateText('shoeCount', state.shoeRemaining);
+  renderBettingStatus(state.betting);
+  renderAutoStart(state.autoStart);
 
   if (!state.current) {
     updateText('playerTotal', 0);
@@ -70,6 +85,54 @@ function renderState(state) {
   updateSelects(current);
 }
 
+function renderBettingStatus(betting) {
+  var dealBtn = document.getElementById('dealBtn');
+  if (!betting || !betting.closesAt) {
+    updateText('betTimer', '-');
+    if (dealBtn) {
+      dealBtn.disabled = false;
+      dealBtn.textContent = 'Start Betting';
+    }
+    handleBettingTransition(false);
+    return;
+  }
+  if (betting.open) {
+    updateText('betTimer', betting.secondsLeft);
+    if (dealBtn) {
+      dealBtn.disabled = true;
+      dealBtn.textContent = 'Betting (' + betting.secondsLeft + ')';
+    }
+    handleBettingTransition(true);
+    return;
+  }
+  updateText('betTimer', 'Closed');
+  if (dealBtn) {
+    dealBtn.disabled = false;
+    dealBtn.textContent = 'Start Betting';
+  }
+  handleBettingTransition(false);
+}
+
+function renderAutoStart(enabled) {
+  var pauseBtn = document.getElementById('pauseBtn');
+  if (!pauseBtn) return;
+  pauseBtn.textContent = enabled ? 'Pause' : 'Resume';
+}
+
+function handleBettingTransition(isOpen) {
+  if (lastBettingOpen === null) {
+    lastBettingOpen = isOpen;
+    return;
+  }
+  if (!lastBettingOpen && isOpen) {
+    showToast('Betting open');
+  }
+  if (lastBettingOpen && !isOpen) {
+    showToast('Betting closed, results revealed');
+  }
+  lastBettingOpen = isOpen;
+}
+
 function updateSelects(current) {
   slots.forEach(function(slot) {
     var select = document.getElementById('select' + slot);
@@ -86,7 +149,7 @@ function updateSelects(current) {
     if (!currentCode) {
       var emptyOpt = document.createElement('option');
       emptyOpt.value = '';
-      emptyOpt.textContent = '없음';
+      emptyOpt.textContent = 'None';
       select.appendChild(emptyOpt);
       select.disabled = true;
       return;
@@ -115,6 +178,19 @@ function fetchState() {
     .then(renderState);
 }
 
+function connectEvents() {
+  if (!window.EventSource) return;
+  var source = new EventSource(apiBase + '/events');
+  source.addEventListener('state', function(event) {
+    try {
+      var payload = JSON.parse(event.data);
+      renderState(payload);
+    } catch (err) {
+      // ignore malformed payload
+    }
+  });
+}
+
 function postJson(path, body) {
   return fetch(apiBase + path, {
     method: 'POST',
@@ -132,6 +208,7 @@ document.addEventListener('DOMContentLoaded', function() {
   var dealBtn = document.getElementById('dealBtn');
   var clearBtn = document.getElementById('clearBtn');
   var resetBtn = document.getElementById('resetBtn');
+  var pauseBtn = document.getElementById('pauseBtn');
 
   if (dealBtn) {
     dealBtn.addEventListener('click', function() {
@@ -151,6 +228,13 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
 
+  if (pauseBtn) {
+    pauseBtn.addEventListener('click', function() {
+      var enabled = pauseBtn.textContent !== 'Resume';
+      postJson('/auto', { enabled: !enabled });
+    });
+  }
+
   slots.forEach(function(slot) {
     var select = document.getElementById('select' + slot);
     if (!select) return;
@@ -162,4 +246,5 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   fetchState();
+  connectEvents();
 });
